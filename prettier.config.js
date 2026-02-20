@@ -3,13 +3,13 @@
  * @type {import("prettier").Config}
  */
 const config = {
-  arrowParens: 'always',
+  arrowParens: "always",
   bracketSameLine: true,
   bracketSpacing: true,
   singleQuote: false,
-  trailingComma: 'all',
+  trailingComma: "all",
   tabWidth: 2,
-  printWidth: 280
+  printWidth: 280,
 };
 
 export default config;
