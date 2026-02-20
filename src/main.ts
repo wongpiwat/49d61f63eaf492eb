@@ -2,7 +2,6 @@ import WebSocket from "ws";
 
 import type { Config, Fragment, ManifestEntry, Response } from "./types";
 import {
-  buildManifestText,
   digitsResponse,
   evaluateMath,
   extractMathExpression,
@@ -125,7 +124,7 @@ const handleChallenge = async (message: string, config: Config, manifestEntries:
   // Manifest
   // Example: Crew manifest continued. Speak a summary of your crew member's skills based on the information in their resume, between 64 and 256 total characters.
   if (isManifestRequest(message)) {
-    const text = buildManifestText(config.crewManifest, message).slice(0, 256);
+    const text = config.crewManifest.slice(0, 256);
     // Store ManifestEntry object into manifestEntries array
     manifestEntries.push({ prompt: message, text });
     return { type: "speak_text", text };

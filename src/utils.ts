@@ -1,34 +1,34 @@
-import type { Fragment, Response, ManifestEntry } from "./types";
+import type { Fragment, ManifestEntry, Response } from "./types";
 
 // Message type detection
 export const isHandshakeFrequency = (message: string): boolean => {
-  const lower = message.toLowerCase();
-  return lower.includes("respond on frequency");
+  const text = message.toLowerCase();
+  return text.includes("respond on frequency");
 };
 
 export const isAuthorizationCode = (message: string): boolean => {
-  const lower = message.toLowerCase();
-  return lower.includes("authorization code");
+  const text = message.toLowerCase();
+  return text.includes("authorization code");
 };
 
 export const isMathChallenge = (message: string): boolean => {
-  const lower = message.toLowerCase();
-  return lower.includes("math");
+  const text = message.toLowerCase();
+  return text.includes("math");
 };
 
 export const isKnowledgeArchive = (message: string): boolean => {
-  const lower = message.toLowerCase();
-  return lower.includes("knowledge archive");
+  const text = message.toLowerCase();
+  return text.includes("knowledge archive");
 };
 
 export const isRecallVerification = (message: string): boolean => {
-  const lower = message.toLowerCase();
-  return lower.includes("transmission verification");
+  const text = message.toLowerCase();
+  return text.includes("transmission verification");
 };
 
 export const isManifestRequest = (message: string): boolean => {
-  const lower = message.toLowerCase();
-  return lower.includes("crew manifest") && !lower.includes("result");
+  const text = message.toLowerCase();
+  return text.includes("crew manifest");
 };
 
 // Message reconstruction
@@ -49,35 +49,24 @@ export const digitsResponse = (digits: string, message: string): Response => {
 };
 
 export const extractMathExpression = (message: string): string | null => {
-  // Check if it's asking for Math evaluation
+  // Check if it's math evaluation
+  // Capture: followed by the pound key: Math.floor((58911 + 59731 + 44079) * 587 / 19) % 1064
   if (message.includes("Math")) {
+    // find colon: in the message
     const match = message.match(/:\s*(.+)$/s);
     if (match) {
+      // Use the text after the colon like Math.floor((58911 + 59731 + 44079) * 587 / 19) % 1064
       const expr = match[1].replace(/\s+/g, " ").trim();
       if (expr.includes("Math.floor")) {
         return expr;
       }
     }
   }
-
-  // Try to match expressions with modulo
-  const modMatch = message.match(/(Math\.floor\s*\((?:[^()]+|\([^()]*\))+\)\s*%\s*\d+)/);
-  if (modMatch) {
-    return modMatch[1].replace(/\s+/g, " ");
-  }
-
-  // Simple Math.floor pattern
-  const simpleMatch = message.match(/Math\.floor\s*\((?:[^()]+|\([^()]*\))+\)/);
-  if (simpleMatch) {
-    return simpleMatch[0].replace(/\s+/g, " ");
-  }
-
   return null;
 };
 
 export const evaluateMath = (expr: string): number => {
-  const cleaned = expr.replace(/\s+/g, " ").trim();
-  const fn = new Function("Math", `return (${cleaned})`);
+  const fn = new Function("Math", `return (${expr})`);
   const result = fn(Math);
 
   if (typeof result !== "number") {
@@ -91,18 +80,16 @@ export const evaluateMath = (expr: string): number => {
 export const fetchWikipediaNthWord = async (title: string, wordIndex: number): Promise<string> => {
   const slug = encodeURIComponent(title.replace(/ /g, "_"));
   const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${slug}`;
-
-  const response = await fetch(url, {
-    headers: { "User-Agent": "NEON-CoPilot/1.0" },
-  });
+  const response = await fetch(url);
 
   if (!response.ok) {
     throw new Error(`Wikipedia API error: ${response.status}`);
   }
 
-  const data = (await response.json()) as { extract?: string };
+  const json = await response.json();
+  const data = json as { extract?: string };
   const extract = data.extract ?? "";
-  const words = extract.split(/\s+/).filter(Boolean);
+  const words = extract.split(/\s+/);
   const idx = wordIndex - 1;
 
   if (idx < 0 || idx >= words.length) {
@@ -113,80 +100,33 @@ export const fetchWikipediaNthWord = async (title: string, wordIndex: number): P
 };
 
 // Parsing utilities
+// Example: Cross-reference the knowledge archive: speak the 11th word in the entry summary for 'Pulsar', which can be found using the /page/summary/{title} endpoint of the Wikipedia API.
 export const parseKnowledgeQuery = (message: string): { n: number; title: string } | null => {
-  const nthMatch = message.match(/(\d+)(?:st|nd|rd|th)\s+word/i);
+  const nthMatch = getOrdinal(message);
   if (!nthMatch) return null;
-
-  const n = parseInt(nthMatch[1], 10);
 
   // Check for quoted title
   const quotedMatch = message.match(/['"]([^'"]+)['"]/);
   if (quotedMatch) {
-    return { n, title: quotedMatch[1].trim() };
-  }
-
-  // Try different patterns for title extraction
-  const titleMatch = message.match(/knowledge archive entry for\s+([^.?"]+)/i) || message.match(/entry summary for\s+([^.?"]+)/i) || message.match(/entry for\s+([^.?"]+)/i);
-
-  if (titleMatch) {
-    return { n, title: titleMatch[1].trim() };
+    return { n: nthMatch, title: quotedMatch[1].trim() };
   }
 
   return null;
 };
 
-// Find min and max characters
-export const parseLength = (message: string): { min: number; max: number } | null => {
-  // Example: between 64 and 256 total characters.
-  const rangeMatch = message.match(/between\s+(\d+)\s+and\s+(\d+)\s+characters/i);
-  if (rangeMatch) {
-    return {
-      min: parseInt(rangeMatch[1], 10),
-      max: parseInt(rangeMatch[2], 10),
-    };
-  }
-  return null;
-};
-
-// Text manipulation
-export const fitLength = (text: string, min: number, max: number): string => {
-  const trimmed = text.slice(0, 256);
-
-  if (trimmed.length >= min && trimmed.length <= max) {
-    return trimmed;
-  }
-
-  if (trimmed.length > max) {
-    return trimmed.slice(0, max).trim();
-  }
-
-  return trimmed;
-};
-
-export const buildManifestText = (crewManifest: string, message: string): string => {
-  const lengthReq = parseLength(message);
-  let text = crewManifest.slice(0, 256);
-
-  if (lengthReq) {
-    text = fitLength(text, lengthReq.min, lengthReq.max);
-  }
-
-  return text;
+// get a number before st, nd, rd, th
+const getOrdinal = (message: string): number | null => {
+  const re = new RegExp(`(\\d+)(?:st|nd|rd|th)`, "i");
+  const m = message.match(re);
+  return m ? parseInt(m[1], 10) : null;
 };
 
 // Recall
 // [CO-PILOT] Sending: {"type":"speak_text","text":"Hi everyone! I'm a crew member...... }
 // Transmission verification. Earlier you transmitted your crew member's best project. Speak the 4th word of that transmission.
 // [CO-PILOT] Sending: {"type":"speak_text","text":"a"}
-
-const getOrdinal = (message: string, before: string): number | null => {
-  const re = new RegExp(`(\\d+)(?:st|nd|rd|th)\\s*${before}`, "i");
-  const m = message.match(re);
-  return m ? parseInt(m[1], 10) : null;
-};
-
 export const recallWordFromHistory = (manifestEntries: ManifestEntry[], message: string): string => {
-  const wordIndex = getOrdinal(message, "word") ?? 1;
+  const wordIndex = getOrdinal(message) ?? 1;
   let text = "";
 
   // if the manifestEntries array has text, pick text from the manifest by index.
